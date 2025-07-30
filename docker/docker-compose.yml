@@ -1,0 +1,45 @@
+version: '2.0'
+services: 
+   demo_1:
+       image: ai-prof_plumber_renv:v1.4
+       hostname: demo_1
+       container_name: demo_1
+       restart: always  
+       #network_mode: "host"
+       ports:
+        - "81:81"
+       links:
+        - influxdb_2
+       volumes:
+        - ./plumber:/plumber 
+        - ./R:/R 
+        - ./Data:/Data
+        - ./Drivers:/Drivers
+        - ./Models_and_scalers:/Models_and_scalers
+        - ./shared:/shared
+        - ./.Renviron:/.Renviron
+       entrypoint: 'Rscript /plumber/main.R'
+       
+   mysql_tek_1:
+      image: ai-proficient-mysql:BWD-1.0.0
+      hostname: mysql_tek_1
+      container_name: mysql_tek_1
+      ports:
+       - 3307:3306
+      environment: 
+       - MYSQL_ROOT_PASSWORD=s3cr3t
+
+   mysql_tek_2:
+      image: ai-proficient-mysql:BWP-1.0.0
+      hostname: mysql_tek_2
+      container_name: mysql_tek_2
+      ports:
+       - 3308:3306
+      environment: 
+       - MYSQL_ROOT_PASSWORD=s3cr3t
+
+networks:
+   default:
+      external:
+        name: influxdb-docker_default        
+        
