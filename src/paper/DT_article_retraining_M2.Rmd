@@ -1,0 +1,87 @@
+---
+title: "M2 nresults"
+author: "Eider Garate Perez"
+date: "20/5/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(magrittr)
+library(reticulate)
+```
+
+```{python}
+import pickle
+
+no_retraining_results_path = "M2_no_retraining_results.pkl " 
+
+with open(no_retraining_results_path, 'rb') as file:
+  no_retraining_results = pickle.load(file)
+```
+
+```{python}
+import pickle
+
+simple_results_path = "M2_results.pkl" 
+
+with open(simple_results_path, 'rb') as file:
+  simple_results = pickle.load(file)
+```
+
+```{r}
+library(ggplot2)
+
+no_results <- py$no_retraining_results
+
+simple_results <- py$simple_results
+
+results_all <- data.frame("kendall_no" = unlist(no_results$kendall_cv)[1:37], "kendall_cv" = unlist(simple_results$kendall_cv), "kendall_test" = unlist(simple_results$kendall_test),
+                          "simple_retrains" = unlist(simple_results$retrainings))
+
+```
+
+```{r}
+results_all %<>% mutate(simple_retrains = ifelse(simple_retrains, "retraining", NA))
+
+ini_result <-  data.frame(matrix(nrow = 1, ncol = 4))
+ini_result[1,1] <- 0.47; ini_result[1,2] <- 0.47; ini_result[1,3] <- 0.47; ini_result[1,4] <- "retraining"
+
+colnames(ini_result) <- colnames(results_all)
+
+results_all <- rbind(ini_result, results_all)
+
+p1 <- ggplot(results_all, aes(x = 0:(nrow(results_all) - 1))) +
+  geom_line(aes(y = kendall_no, color = "No retraining")) +
+  geom_line(aes(y = kendall_cv, color = "CV retraining")) +
+  geom_line(aes(y = kendall_test, color = "Test retraining")) +
+  scale_color_manual(values = c("No retraining" = "#030303" , "Test retraining" = "#5F9EA0", "CV retraining" = "#FF7256")) +
+  #geom_point(aes(y = f1_cv_simple, color = "#458B74"), shape = 22, fill = "#458B74") +
+  #geom_point(aes(y = f1_test_simple, color = "#5F9EA0"), shape = 22, fill = "#5F9EA0") +
+  #geom_point(aes(y = f1_cv_adaboost, color = "#FF7F50"), shape = 22, fill = "#FF7F50") +
+  #geom_point(aes(y = f1_test_adaboost, color = "#CD5555"), shape = 22, fill = "#CD5555") +
+  xlab("Days") + ylab("Kendall score") +
+  theme_minimal() 
+
+
+p1 <- p1 + theme(axis.text.x = element_text(size = 12),
+  axis.text.y = element_text(size = 12), 
+  
+  axis.title.x = element_text(size = 14), 
+  axis.title.y = element_text(size = 14), 
+  
+  legend.title = element_blank(), 
+  legend.text = element_text(size = 12))
+
+p1 %>% plotly::ggplotly()
+```
+```{r}
+ggsave(plot = p1, filename = "M2_retraining_results.pdf", units = "cm", width = 15, height = 8)
+```
+
+
+

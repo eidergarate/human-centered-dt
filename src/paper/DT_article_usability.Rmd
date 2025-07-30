@@ -1,0 +1,423 @@
+---
+title: "DT_article_usability"
+author: "Eider Garate Perez"
+date: "20/3/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(magrittr)
+```
+
+
+```{r}
+pred_server <- read.csv("pred_server.csv", row.names = 1, stringsAsFactors = FALSE)
+
+pred_server
+```
+```{r}
+pred_server %<>% filter(Suggestion != "Everything is OK")
+
+pred_server
+```
+```{r}
+days <- unique(lubridate::as_date(pred_server$Date))
+```
+
+```{r}
+pred_server$Pred <- as.numeric(pred_server$Pred)
+```
+
+
+```{r}
+suggestions <- apply(pred_server, 1, FUN = function(observation){
+  if(observation['Pred'] == 0){
+    
+    if(grepl("New Recipe", observation['Suggestion'])){
+      suggestion <- F
+    }
+    else{
+      suggestion <- T
+    }
+    
+  }
+  
+  else{
+    suggestion <- NA
+  }
+  
+  return(suggestion)
+  
+})
+```
+```{r}
+real_corrections <- suggestions[which(!is.na(suggestions))]
+```
+
+```{r}
+pred_server %<>% rename(Datetime = Date) %>%
+  mutate(Date = lubridate::as_date(Datetime))
+```
+
+```{r}
+#Confidential filtering
+```
+```{r}
+pred_server_class0 <- pred_server %>% filter(Pred == 0)
+
+days <- unique(pred_server_class0$Date)
+```
+
+
+```{r}
+visited_recipes <- data.frame(recipe = character(), date = as.Date(character()), stringsAsFactors = FALSE)
+
+suggestions_percentage <- data.frame(percentage = numeric(), date = as.Date(character()), 
+                                     percentage_no_deployed = numeric(), stringsAsFactors = FALSE)
+
+for(day in days){
+  
+  day_preds <- pred_server_class0 %>% filter(Date == day)
+  
+  day_recipes <- unique(day_preds$recipe)
+  
+  day_recipes <- day_recipes[which(day_recipes != "known")]
+  
+  pct_no_deployed_day <- nrow(day_preds[which(day_preds$recipe == "known"), ])/nrow(day_preds)
+  
+  if(length(day_recipes) != 0){
+    
+    saved_recipes <- unique(visited_recipes$recipe)
+    
+    already_not_saved <- day_recipes[!day_recipes %in% saved_recipes]
+    
+    date_rows <- rep(day, length(already_not_saved))
+    
+    suggested <- day_preds %>% filter(!recipe %in% already_not_saved)
+    
+    n_suggestion <- nrow(suggested)
+    n_pct <- n_suggestion/nrow(day_preds)
+    
+    suggestions_percentage_i <- data.frame(percentage = n_pct, date = day, percentage_no_deployed = pct_no_deployed_day)
+    suggestions_percentage <- rbind(suggestions_percentage, suggestions_percentage_i)
+    
+    
+    visited_recipes_i <- data.frame(recipe = already_not_saved, date = date_rows)
+    
+    visited_recipes <- rbind(visited_recipes, visited_recipes_i)
+  }
+  else{
+    n_pct <- 1
+    suggestions_percentage_i <- data.frame(percentage = n_pct, date = day, percentage_no_deployed = pct_no_deployed_day)
+    suggestions_percentage <- rbind(suggestions_percentage, suggestions_percentage_i)
+  }
+
+  
+}
+
+suggestions_percentage %<>% mutate(date = lubridate::as_date(date))
+```
+
+```{r}
+library(ggplot2)
+
+p1 <- ggplot(suggestions_percentage, aes(x = date)) + 
+  geom_line(aes(y = percentage, color = "continuous improvement"), size = 1) + 
+  geom_ribbon(aes(ymin = 0, ymax = percentage), fill = "lightblue", alpha = 0.5) +
+  geom_line(aes(y = percentage_no_deployed, color = "without improvement"), size = 1) +
+  ylim(c(0, 1)) +
+  xlab("Date") + 
+  ylab("Rate") +
+   theme_minimal() +
+  scale_color_manual(values = c("continuous improvement" = "#2F4F4F", "without improvement" = "#CD5B45")) +
+  theme(axis.title.y = element_text(size = 17),
+        axis.title.x = element_text(size = 17),
+        axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15),
+        legend.text = element_text(size = 17),
+        legend.title = element_blank()) +  # Removes the legend title, adjust as needed
+  guides(color = guide_legend(title = NULL))
+
+p1
+```
+
+```{r}
+#aldatu a pivot_longer, eta jarri bi boxplot-ak batabestian albuan -> idatzi bixar dagokion testua.
+p2 <- ggplot(suggestions_percentage, aes(x = 1)) + geom_boxplot(aes(y = percentage), fill = "#9BCD9B") +
+  ylab("Percentage") + 
+  theme_minimal() + 
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 15),
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 12))
+
+p2
+```
+```{r}
+suggestions_long_df <- tidyr::pivot_longer(
+  suggestions_percentage,
+  cols = c("percentage", "percentage_no_deployed"),
+  names_to = "measurement_type",
+  values_to = "measurement"
+)
+suggestions_long_df
+```
+```{r}
+p3 <- ggplot(suggestions_long_df, aes(x = measurement_type)) + geom_boxplot(aes(y = measurement, fill = measurement_type)) +
+  ylab("Rate") +
+  theme_minimal() + 
+  scale_fill_manual(values = c("percentage" = "#2F4F4F", "percentage_no_deployed" = "#CD5B45"),
+                    labels = c("continuous improvement", "without improvement")) +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 17),
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 15),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 17)) 
+
+p3
+
+```
+
+
+
+
+```{r}
+ggsave(filename = here::here("suggestion_pct.pdf"), plot = p1, width = 8, height = 3, units = 'in')
+ggsave(filename = here::here("suggestion_pct_boxplot.pdf"), plot = p3, width = 8, height = 3, units = 'in')
+```
+
+```{r}
+historicalDB_deployment <- read.csv("historicalDB_deployment.csv", stringsAsFactors = FALSE)
+```
+
+```{r}
+min_date <- min(pred_server_class0$Datetime)
+max_date <- max(pred_server_class0$Datetime)
+```
+
+```{r}
+historicalDB_deployment %<>%  mutate(datetime_ini = lubridate::as_datetime(EX2_restart_ini_time_OFF, origin = "1970-01-01"))
+
+historicalDB_deployment %<>% filter(datetime_ini >= lubridate::as_datetime(min_date)) %>%
+  filter(datetime_ini <= lubridate::as_datetime(max_date))
+```
+
+```{r}
+historical_recipes_and_dates <- historicalDB_deployment %>% select(datetime_ini, ---) %>%
+  mutate(date_ini = lubridate::as_date(datetime_ini)) #Some confidential variables are selected
+
+historical_recipes_and_dates
+```
+```{r}
+visited_recipes_indicators <- data.frame(recipe = character(), date = as.Date(character()), stringsAsFactors = FALSE)
+
+known_recipes_percentage <- data.frame(percentage = numeric(), date = as.Date(character()), 
+                                     percentage_no_deployed = numeric(), stringsAsFactors = FALSE)
+
+for(day_idx in 1:length(days)){
+  
+  day <- days[day_idx]
+  
+  day_indicators <- historical_recipes_and_dates %>% filter(date_ini == day)
+  
+  if(nrow(day_indicators) != 0){
+    
+    day_recipes <- unique(day_indicators$EX_INF_recipe_ON)
+  
+    unknown_recipes_teorical_dep <- visited_recipes %>% filter(lubridate::as_date(date) == lubridate::as_date(day))
+    
+    unknown_recipes_dep <- day_recipes[which(day_recipes %in% unknown_recipes_teorical_dep$recipe)]
+    
+    known_recipes_dep <- day_recipes[which(!day_recipes %in% unknown_recipes_teorical_dep$recipe)]
+    
+    unknown_recipes_dep <- unknown_recipes_dep[which(!is.na(unknown_recipes_dep))]
+    
+    known_recipes_dep <- known_recipes_dep[which(!is.na(known_recipes_dep))]
+    
+    knwon_pct <- length(known_recipes_dep)/(length(known_recipes_dep) + length(unknown_recipes_dep))
+    
+    
+    
+    
+    unknown_recipes_teorical_no_dep <- visited_recipes$recipe
+    
+    unknown_recipes_no_dep <- day_recipes[which(day_recipes %in% unknown_recipes_teorical_no_dep)]
+    
+    known_recipes_no_dep <- day_recipes[which(!day_recipes %in% unknown_recipes_teorical_no_dep)]
+    
+    unknown_recipes_no_dep <- unknown_recipes_no_dep[which(!is.na(unknown_recipes_no_dep))]
+    
+    known_recipes_no_dep <- known_recipes_no_dep[which(!is.na(known_recipes_no_dep))]
+    
+    knwon_pct_no_dep <- length(known_recipes_no_dep)/(length(known_recipes_no_dep) + length(unknown_recipes_no_dep))
+    
+    known_recipes_percentage_i <- data.frame(percentage = knwon_pct, date = day, percentage_no_deployed = knwon_pct_no_dep)
+    known_recipes_percentage <- rbind(known_recipes_percentage, known_recipes_percentage_i)
+    
+  }
+}
+```
+```{r}
+library(ggplot2)
+
+p4 <- ggplot(known_recipes_percentage, aes(x = date)) + 
+  geom_line(aes(y = percentage, color = "continuous improvement"), size = 1) + 
+  geom_line(aes(y = percentage_no_deployed, color = "without improvement"), size = 1) +
+  ylim(c(0, 1)) +
+  xlab("Date") + 
+  ylab("Rate") +
+  theme_minimal() +
+  guides(color = guide_legend(title = NULL))+
+  scale_color_manual(values = c("continuous improvement" = "#2F4F4F", "without improvement" = "#CD5B45")) +
+  theme(axis.title.y = element_text(size = 17),
+        axis.title.x = element_text(size = 17),
+        axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15),
+        legend.text = element_text(size = 15),
+        legend.title = element_blank()) # Removes the legend title, adjust as needed
+
+p4
+```
+
+```{r}
+ggsave(filename = here::here("sug_recipe_pct.pdf"), plot = p4, width = 8, height = 3, units = 'in')
+```
+
+```{r}
+known_recipes_percentage_long_df <- tidyr::pivot_longer(
+  known_recipes_percentage,
+  cols = c("percentage", "percentage_no_deployed"),
+  names_to = "measurement_type",
+  values_to = "measurement"
+)
+known_recipes_percentage_long_df
+```
+
+```{r}
+p5 <- ggplot(known_recipes_percentage_long_df, aes(x = measurement_type)) + geom_boxplot(aes(y = measurement, fill = measurement_type)) +
+  ylab("Rate") +
+  theme_minimal() + 
+  scale_fill_manual(values = c("percentage" = "#2F4F4F", "percentage_no_deployed" = "#CD5B45"),
+                    labels = c("continuous improvement", "without improvement")) +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 15),
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 12),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 15)) 
+
+p5
+
+```
+```{r}
+ggsave(filename = here::here("sug_recipe_pct_boxplot.png"), plot = p5, width = 8, height = 3, units = 'in')
+```
+
+```{r}
+
+known_recipes_durations <- data.frame(duration = numeric(), date = as.Date(character()), 
+                                     duration_no_deployed = numeric(), stringsAsFactors = FALSE)
+
+for(day_idx in 1:length(days)){
+  
+  day <- days[day_idx]
+  
+  day_indicators <- historical_recipes_and_dates %>% filter(date_ini == day)
+  
+  if(nrow(day_indicators) != 0){
+    
+    day_recipes <- unique(day_indicators$EX_INF_recipe_ON)
+  
+    unknown_recipes_teorical_dep <- visited_recipes %>% filter(lubridate::as_date(date) == lubridate::as_date(day))
+    
+    unknown_recipes_dep <- day_recipes[which(day_recipes %in% unknown_recipes_teorical_dep$recipe)]
+    
+    known_recipes_dep <- day_recipes[which(!day_recipes %in% unknown_recipes_teorical_dep$recipe)]
+    
+    unknown_recipes_dep <- unknown_recipes_dep[which(!is.na(unknown_recipes_dep))]
+    
+    known_recipes_dep <- known_recipes_dep[which(!is.na(known_recipes_dep))]
+    
+    data_day_known_duration <- day_indicators %>% filter(EX_INF_recipe_ON %in% known_recipes_dep) %>%
+      filter(EX_DS_Hot_prof_status == 0) %>%
+      summarise(sum(EX2_restart_duration, na.rm = T))
+    
+    data_day_all_duration <- day_indicators %>%
+      filter(EX_DS_Hot_prof_status == 0) %>%
+      summarise(sum(EX2_restart_duration, na.rm = T))
+    
+    knwon_duration_pct <- data_day_known_duration/data_day_all_duration
+    
+    
+    
+    
+    unknown_recipes_teorical_no_dep <- visited_recipes$recipe
+    
+    unknown_recipes_no_dep <- day_recipes[which(day_recipes %in% unknown_recipes_teorical_no_dep)]
+    
+    known_recipes_no_dep <- day_recipes[which(!day_recipes %in% unknown_recipes_teorical_no_dep)]
+    
+    unknown_recipes_no_dep <- unknown_recipes_no_dep[which(!is.na(unknown_recipes_no_dep))]
+    
+    known_recipes_no_dep <- known_recipes_no_dep[which(!is.na(known_recipes_no_dep))]
+    
+    data_day_known_duration_no_dep <- day_indicators %>% filter(EX_INF_recipe_ON %in% known_recipes_no_dep) %>%
+      filter(EX_DS_Hot_prof_status == 0) %>%
+      summarise(sum(EX2_restart_duration, na.rm = T))
+    
+    data_day_all_duration_no_dep <- day_indicators %>%
+      filter(EX_DS_Hot_prof_status == 0) %>%
+      summarise(sum(EX2_restart_duration, na.rm = T))
+    
+    knwon_duration_no_dep_pct <- data_day_known_duration_no_dep/data_day_all_duration_no_dep
+    
+    
+    
+    known_recipes_durations_i <- data.frame(duration = knwon_duration_pct, date = day, 
+                                     duration_no_deployed = knwon_duration_no_dep_pct)
+    known_recipes_durations <- rbind(known_recipes_durations, known_recipes_durations_i)
+    
+  }
+}
+```
+```{r}
+colnames(known_recipes_durations) <- c("duration", "date", "duration_no_deployed")
+
+
+p6 <- ggplot(known_recipes_durations, aes(x = date)) + 
+  geom_line(aes(y = duration, color = "continuous improvement"), size = 1) + 
+  geom_line(aes(y = duration_no_deployed, color = "without improvement"), size = 1) +
+  ylim(c(0, 1)) +
+  xlab("Date") + 
+  ylab("Rate") +
+  theme_minimal() +
+  guides(color = guide_legend(title = NULL))+
+  scale_color_manual(values = c("continuous improvement" = "#2F4F4F", "without improvement" = "#CD5B45")) +
+  theme(axis.title.y = element_text(size = 17),
+        axis.title.x = element_text(size = 17),
+        axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15),
+        legend.text = element_text(size = 15),
+        legend.title = element_blank())
+
+p6
+```
+```{r}
+ggsave(filename = here::here("sug_recipe_duration_boxplot.pdf"), plot = p6, width = 8, height = 3, units = 'in')
+```
+
+
+
+
+
+
+
+
+
+

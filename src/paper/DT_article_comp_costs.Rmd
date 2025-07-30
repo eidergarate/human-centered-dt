@@ -1,0 +1,143 @@
+---
+title: "DT_article_comp_costs"
+author: "Eider Garate Perez"
+date: "18/3/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(tidyverse)
+library(tidyr)
+```
+
+```{r}
+computational_cost_ini <- read.csv("path-to-results.csv", stringsAsFactors = FALSE)
+```
+
+```{r}
+computational_cost_ini %<>% select(-c(X))
+```
+
+```{r}
+colnames(computational_cost_ini) <- c("Timings calculation", "Influx query", "Data cleaning and processing", "Optimal setpoints", "Time to predict", "Suggestions", "Update MySQLs")
+```
+
+
+```{r}
+computational_cost <- computational_cost_ini %>%
+    pivot_longer(
+    cols = everything(), 
+    names_to = "Task", 
+    values_to = "Seconds"
+  )
+computational_cost
+```
+
+
+```{r}
+computational_cost %<>% mutate(
+  
+  Task_number = if_else(Task == "Timings calculation", 1, NA_real_),
+  Task_number = if_else(Task == "Influx query", 2, Task_number), 
+  Task_number = if_else(Task == "Data cleaning and processing", 3, Task_number),
+  Task_number = if_else(Task == "Optimal setpoints", 4, Task_number),
+  Task_number = if_else(Task == "Time to predict", 5, Task_number),
+  Task_number = if_else(Task == "Suggestions", 6, Task_number), 
+  Task_number = if_else(Task == "Update MySQLs", 7, Task_number)
+  
+)
+
+computational_cost$legend_name <- paste(computational_cost$Task_number, computational_cost$Task, sep = ": ")
+```
+
+```{r}
+p <- ggplot(computational_cost, aes(x = factor(Task_number), y = Seconds, fill = legend_name)) + 
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set3", name = "Task") +
+  theme_minimal() +
+  theme(legend.position = "right",
+        axis.title.x = element_blank(),
+        legend.title = element_text(size = 17),
+        legend.text = element_text(size = 15),
+        axis.title.y = element_text(size = 17),
+        axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15)) +
+  labs(x = "Task numbers", y = "Seconds")
+
+p
+```
+```{r}
+ggsave(filename = here::here("computational_cost_boxplot.pdf"), plot = p, width = 8, height = 3, units = 'in')
+```
+
+```{r}
+computational_cost_ini %<>% mutate(
+  `Timings calculation` = if_else(is.na(`Timings calculation`), 0, `Timings calculation`),
+  `Influx query` = if_else(is.na(`Influx query`), 0, `Influx query`),
+  `Data cleaning and processing` = if_else(is.na(`Data cleaning and processing`), 0, `Data cleaning and processing`),
+  `Optimal setpoints` = if_else(is.na(`Optimal setpoints`), 0, `Optimal setpoints`),
+  `Time to predict` = if_else(is.na(`Time to predict`), 0, `Time to predict`),
+  `Suggestions` = if_else(is.na(`Suggestions`), 0, `Suggestions`),
+  `Update MySQLs` = if_else(is.na(`Update MySQLs`), 0, `Update MySQLs`),
+  
+   total_time = `Timings calculation` + `Influx query` + `Data cleaning and processing` +
+                   `Optimal setpoints` + `Time to predict` + `Suggestions` + `Update MySQLs`
+  )
+computational_cost_ini
+```
+
+
+```{r}
+density <- density(computational_cost_ini$total_time)
+
+probability <- cumsum(density$y) / sum(density$y)
+
+data_density <- data.frame(x_samples = density$x, density = density$y, probability = probability)
+
+colores_brewer <- RColorBrewer::brewer.pal(3, "Set3")[1:2]
+colores_viridis <- viridis::viridis(2)
+
+p2 <- ggplot(data_density, aes(x = x_samples)) +
+  geom_line(aes(y = density, color = "Density"), size = 1) +
+  geom_line(aes(y = probability, color = "Probability"), size = 1) +
+  geom_vline(xintercept = 5, linetype = "dashed", colour = "grey", size = 1.3) +
+  geom_text(x = 5.8, y = 0.95, label = "0.982", color = "#EE7600", size = 5) + 
+  labs(y = "", x = "") +
+  theme_minimal() +
+  scale_color_manual(name = "", values = c("Density" = "#5F9EA0", "Probability" = "#EE7600")) +
+  theme(axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15),
+        legend.text = element_text(size = 15)
+        )
+  
+p2
+```
+
+```{r}
+ggsave(filename = here::here("computational_cost_density.pdf"), plot = p2, width = 8, height = 3, units = 'in')
+```
+
+
+```{r}
+library(moments)
+
+skewness_total <- skewness(computational_cost_ini$total_time)
+kurtosis_total <- kurtosis(computational_cost_ini$total_time)
+```
+
+
+
+
+
+
+
+
+
+

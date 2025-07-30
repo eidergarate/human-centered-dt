@@ -1,0 +1,104 @@
+---
+title: "retraining_M1"
+author: "Eider Garate Perez"
+date: "8/4/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(magrittr)
+library(reticulate)
+```
+
+```{python}
+import pickle
+
+no_retraining_results_path = "no_retraining_results.pkl" 
+
+with open(no_retraining_results_path, 'rb') as file:
+  no_retraining_results = pickle.load(file)
+```
+
+```{python}
+import pickle
+
+simple_results_path = "simple_results.pkl" 
+
+with open(simple_results_path, 'rb') as file:
+  simple_results = pickle.load(file)
+```
+
+```{python}
+import pickle
+
+adaboost_results_path = "adaboost_results.pkl" 
+
+with open(adaboost_results_path, 'rb') as file:
+  adaboost_results = pickle.load(file)
+```
+
+```{r}
+library(ggplot2)
+
+no_results <- py$no_retraining_results
+
+simple_results <- py$simple_results
+
+adaboost_results <- py$adaboost_results
+
+results_all <- data.frame("f1_no" = unlist(no_results$f1_cv)[1:37], "f1_cv_simple" = unlist(simple_results$f1_cv), "f1_test_simple" = unlist(simple_results$f1_test),
+                          "f1_cv_adaboost" = unlist(adaboost_results$f1_cv), "f1_test_adaboost" = unlist(adaboost_results$f1_test), "simple_retrains" = unlist(simple_results$retrainings), "adaboost_retrains" = unlist(adaboost_results$retrainings))
+
+```
+
+
+```{r}
+results_all %<>% mutate(simple_retrains = ifelse(simple_retrains, "retraining", NA), adaboost_retrains = ifelse(adaboost_retrains, "retraining", NA))
+
+ini_result <-  data.frame(matrix(nrow = 1, ncol = 4))
+ini_result[1,1] <- 0.84; ini_result[1,2] <- 0.84; ini_result[1,3] <- 0.84; ini_result[1,4] <- 0.84; ini_result[1,5] <- 0.84; ini_result[1,6] <- 0.84; ini_result[1,7] <- "retraining"
+
+colnames(ini_result) <- colnames(results_all)
+
+results_all <- rbind(ini_result, results_all)
+
+p1 <- ggplot(results_all, aes(x = 0:(nrow(results_all) - 1))) +
+  geom_line(aes(y = f1_no, color = "No retraining")) +
+  geom_line(aes(y = f1_cv_simple, color = "CV simple retraining")) +
+  geom_line(aes(y = f1_test_simple, color = "Test simple retraining")) +
+  geom_line(aes(y = f1_cv_adaboost, color = "CV adaboost retraining")) +
+  geom_line(aes(y = f1_test_adaboost, color = "Test adaboost retraining")) +
+  scale_color_manual(values = c("No retraining" = "#030303" , "Test simple retraining" = "#5F9EA0", "CV simple retraining" = "#458B74", "CV adaboost retraining" = "#FF7F50", "Test adaboost retraining" = "#CD5555")) +
+  #geom_point(aes(y = f1_cv_simple, color = "#458B74"), shape = 22, fill = "#458B74") +
+  #geom_point(aes(y = f1_test_simple, color = "#5F9EA0"), shape = 22, fill = "#5F9EA0") +
+  #geom_point(aes(y = f1_cv_adaboost, color = "#FF7F50"), shape = 22, fill = "#FF7F50") +
+  #geom_point(aes(y = f1_test_adaboost, color = "#CD5555"), shape = 22, fill = "#CD5555") +
+  xlab("Days") + ylab("F1 score") +
+  theme_minimal() 
+
+
+p1 <- p1 + theme(axis.text.x = element_text(size = 12),
+  axis.text.y = element_text(size = 12), 
+  
+  axis.title.x = element_text(size = 14), 
+  axis.title.y = element_text(size = 14), 
+  
+  legend.title = element_blank(), 
+  legend.text = element_text(size = 12))
+
+p1 %>% plotly::ggplotly()
+```
+```{r}
+ggsave(plot = p1, filename = "M1_retraining_results.pdf", units = "cm", width = 15, height = 8)
+```
+
+
+
+
+
+

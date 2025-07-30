@@ -1,0 +1,178 @@
+---
+title: "inpputing real first"
+author: "Eider Garate Perez"
+date: "8/4/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(magrittr)
+library(reticulate)
+```
+
+```{r}
+preprocessed_data_MW1 <- read.csv("processed_data_path.csv", stringsAsFactors = FALSE)
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+```
+
+
+```{python}
+#Confidential filtering
+preprocessed_data_MW1 = r.preprocessed_data_MW1
+
+preprocessed_data_MW1.loc[:, 'datetime_ini'] = pd.to_datetime(preprocessed_data_MW1['---'], unit = "s")
+
+preprocessed_data_MW1['Year'] = preprocessed_data_MW1['datetime_ini'].dt.year
+preprocessed_data_MW1['Month'] = preprocessed_data_MW1['datetime_ini'].dt.month
+preprocessed_data_MW1['Day'] = preprocessed_data_MW1['datetime_ini'].dt.day
+
+preprocessed_data_MW1 = preprocessed_data_MW1[(preprocessed_data_MW1['datetime_ini'] >= pd.to_datetime("---"))]
+
+preprocessed_data_MW1 = preprocessed_data_MW1(columns=['Year', 'Month', 'Day', 'datetime_ini'])
+
+preprocessed_data_MW1 =  preprocessed_data_MW1[(preprocessed_data_MW1['EX_INF_restart_type'] == "Normal_restart")]
+```
+```{r}
+preprocessed_data_MW1 <-  py$preprocessed_data_MW1
+```
+
+```{r}
+#Variables are confidential
+preprocessed_data_MW1 %<>% filter(EX_DS_Hot_prof_status == 0  ) %>% select(-c(---))
+```
+
+```{r}
+visdat::vis_miss(preprocessed_data_MW1[, 200:227])
+```
+
+```{r}
+preprocessed_data_MW1 <- tidyr::drop_na(preprocessed_data_MW1)
+```
+
+```{python}
+from sklearn.ensemble import RandomForestRegressor
+
+preprocessed_data_MW1 = r.preprocessed_data_MW1
+
+#Confidential filtering
+
+rf = RandomForestRegressor(n_estimators = 200, max_depth = 10, min_samples_split = 20, min_samples_leaf = 10, bootstrap = True)
+
+X = preprocessed_data_MW1.drop(["quality", "---"], axis = 1) #Confidential drop
+Y = preprocessed_data_MW1['quality']
+
+rf.fit(X, Y)
+
+Y_pred = rf.predict(X)
+
+from sklearn.metrics import r2_score
+
+r2_score(Y, Y_pred)
+
+
+```
+
+```{python}
+from sklearn.model_selection import GridSearchCV
+from sklearn.pipeline import Pipeline
+from sklearn.pipeline import make_pipeline
+
+pipe = make_pipeline(RandomForestRegressor())
+
+params = [{ "randomforestregressor__max_depth" : [7, 10],
+            'randomforestregressor__min_samples_leaf' : [10],
+            "randomforestregressor__bootstrap" : [True],
+            "randomforestregressor__n_estimators" : [200],
+            "randomforestregressor__min_samples_split" : [20]}]
+
+grid = GridSearchCV(
+        estimator = pipe,
+        param_grid = params,
+        scoring = 'r2',
+        cv = 3
+        )
+# grid.fit(X, Y)
+```
+
+```{python}
+cv_results = pd.DataFrame(grid.cv_results_)
+```
+
+
+```{python}
+model_path = "model.pkl"
+
+with open(filename, 'wb') as file:
+    pickle.dump(rf, file)
+```
+
+```{r}
+historicalDB_deployment <- read.csv("deployment_data.csv", stringsAsFactors = FALSE)
+```
+
+```{r}
+X <- py$X
+model_cols <- colnames(X)
+server_cols <- colnames(historicalDB_deployment)
+quitar_cols <- c()
+
+for(col_name in model_cols){
+  
+  if(!col_name %in% server_cols){
+    
+    quitar_cols <- c(quitar_cols, col_name)
+    
+  }  
+  
+  
+}
+```
+
+```{r}
+X_server <- historicalDB_deployment %>% select(model_cols, EX_INF_restart_type, EX_INF_recipe_ON)
+restart_var <- X_server %>% select(EX_INF_restart_type)
+recipes_var <- X_server %>% select(EX_INF_recipe_ON) 
+X_server %<>% select(-c(EX_INF_restart_type, EX_INF_recipe_ON))
+X_server %<>% tibble::rownames_to_column(.)
+restart_var %<>% tibble::rownames_to_column(.)
+recipes_var %<>% tibble::rownames_to_column(.)
+
+X_server <- tidyr::drop_na(X_server)
+
+restart_var <- restart_var %>% filter(rowname %in% X_server$rowname)
+recipes_var <- recipes_var %>% filter(rowname %in% X_server$rowname)
+
+X_server %<>% select(-c(rowname))
+restart_var %<>% select(-c(rowname))
+recipes_var %<>% select(-c(rowname))
+```
+
+```{python}
+X_server = r.X_server
+
+#Condidential filtering
+
+Y_server = rf.predict(X_server)
+```
+
+
+```{r}
+X_server$quality <- py$Y_server
+#Some confidential renamings
+X_server$--- <- restart_var$---
+X_server$--- <- recipes_var$---
+```
+
+```{r}
+write.csv(X_server, file = "M2_server_data.csv")
+```
+
